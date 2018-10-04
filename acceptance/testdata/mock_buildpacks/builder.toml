@@ -1,0 +1,14 @@
+[[buildpacks]]
+id = "mock.bp.first"
+uri = "file://first"
+
+[[buildpacks]]
+id = "mock.bp.second"
+uri = "file://second"
+
+[[buildpacks]]
+id = "mock.bp.third"
+uri = "file://third"
+
+[[groups]]
+buildpacks = [{ id = "mock.bp.first", version = "1.2.3" }]

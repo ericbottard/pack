@@ -132,6 +132,79 @@ func testPack(t *testing.T, when spec.G, it spec.S) {
 			})
 		}, spec.Parallel(), spec.Report(report.Terminal{}))
 
+		when("a custom group is specified by providing multiple '--buildpack' params", func() {
+			javaBpId := "io.buildpacks.samples.java"
+			it.Before(func() {
+				var err error
+				sourceCodePath, err = ioutil.TempDir("", "pack.build.maven_app.")
+				if err != nil {
+					t.Fatal(err)
+				}
+				exec.Command("cp", "-r", "testdata/maven_app/.", sourceCodePath).Run()
+			})
+
+			it("builds and exports an image", func() {
+				cmd := exec.Command(pack, "build", repoName, "--buildpack", javaBpId, "-p", sourceCodePath)
+				cmd.Env = append(os.Environ(), "HOME="+homeDir)
+				buildOutput := run(t, cmd)
+
+				t.Log(buildOutput)
+				assertEq(t, strings.Contains(buildOutput, "DETECTING WITH MANUALLY-PROVIDED GROUP:"), true)
+				if strings.Contains(buildOutput, "Node.js Buildpack") {
+					t.Fatalf("should have skipped Node.js buildpack because --buildpack flag was provided")
+				}
+				assertEq(t, strings.Contains(buildOutput, "Sample Java Buildpack: pass"), true)
+
+				run(t, exec.Command("docker", "run", "--name="+containerName, "--rm=true", "-d", "-e", "PORT=8080", "-p", ":8080", repoName))
+				launchPort := fetchHostPort(t, containerName)
+
+				time.Sleep(2 * time.Second)
+				assertEq(t, fetch(t, "http://localhost:"+launchPort), "Maven buildpack worked!")
+			})
+		})
+
+		when("a custom group is specified by providing multiple '--buildpack' params", func() {
+			var (
+				builderRepoName string
+				builderTOML string
+			)
+			it.Before(func() {
+				builderRepoName = "some-org/" + randString(10)
+				builderTOML = filepath.Join("testdata", "mock_buildpacks", "builder.toml")
+			})
+
+			it.After(func() {
+				docker.Kill(containerName)
+				docker.RemoveImage(builderRepoName)
+			})
+
+			it("builds and exports an image", func() {
+				t.Log("create builder image")
+				cmd := exec.Command(pack, "create-builder", builderRepoName, "-b", builderTOML)
+				output, err := cmd.CombinedOutput()
+				if err != nil {
+					t.Fatalf("create-builder command failed: %s: %s", output, err)
+				}
+
+				//cmd := exec.Command(pack, "build", repoName, "--buildpack", javaBpId, "-p", sourceCodePath)
+				//cmd.Env = append(os.Environ(), "HOME="+homeDir)
+				//buildOutput := run(t, cmd)
+				//
+				//t.Log(buildOutput)
+				//assertEq(t, strings.Contains(buildOutput, "DETECTING WITH MANUALLY-PROVIDED GROUP:"), true)
+				//if strings.Contains(buildOutput, "Node.js Buildpack") {
+				//	t.Fatalf("should have skipped Node.js buildpack because --buildpack flag was provided")
+				//}
+				//assertEq(t, strings.Contains(buildOutput, "Sample Java Buildpack: pass"), true)
+				//
+				//run(t, exec.Command("docker", "run", "--name="+containerName, "--rm=true", "-d", "-e", "PORT=8080", "-p", ":8080", repoName))
+				//launchPort := fetchHostPort(t, containerName)
+				//
+				//time.Sleep(2 * time.Second)
+				//assertEq(t, fetch(t, "http://localhost:"+launchPort), "Maven buildpack worked!")
+			})
+		})
+
 		when("'--publish' flag is specified", func() {
 			it("builds and exports an image", func() {
 				runPackBuild := func() string {
