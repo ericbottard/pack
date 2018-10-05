@@ -54,15 +54,15 @@ func (f *RebaseFactory) RebaseConfigFromFlags(flags RebaseFlags) (RebaseConfig, 
 		return RebaseConfig{}, err
 	}
 
-	baseImage, err := f.baseImageName(stackID, flags.RepoName)
+	baseImageName, err := f.baseImageName(stackID, flags.RepoName)
 	if err != nil {
 		return RebaseConfig{}, err
 	}
 	if !flags.NoPull && !flags.Publish {
-		f.Log.Println("Pulling base image", baseImage)
-		err := f.Docker.PullImage(baseImage)
+		f.Log.Println("Pulling base image", baseImageName)
+		err := f.Docker.PullImage(baseImageName)
 		if err != nil {
-			return RebaseConfig{}, fmt.Errorf(`failed to pull stack build image "%s": %s`, baseImage, err)
+			return RebaseConfig{}, fmt.Errorf(`failed to pull stack build image "%s": %s`, baseImageName, err)
 		}
 	}
 
@@ -83,12 +83,12 @@ func (f *RebaseFactory) RebaseConfigFromFlags(flags RebaseFlags) (RebaseConfig, 
 	}
 	rebaseConfig.OldBase, err = f.fakeBaseImage(rebaseConfig)
 	if err != nil {
-		return RebaseConfig{}, fmt.Errorf(`failed to read old base image "%s": %s`, baseImage, err)
+		return RebaseConfig{}, fmt.Errorf(`failed to read old base image "%s": %s`, baseImageName, err)
 	}
-	f.Log.Println("Reading new base image", baseImage)
-	rebaseConfig.NewBase, err = f.Images.ReadImage(baseImage, !flags.Publish)
+	f.Log.Println("Reading new base image", baseImageName)
+	rebaseConfig.NewBase, err = f.Images.ReadImage(baseImageName, !flags.Publish)
 	if err != nil {
-		return RebaseConfig{}, fmt.Errorf(`failed to read new base image "%s": %s`, baseImage, err)
+		return RebaseConfig{}, fmt.Errorf(`failed to read new base image "%s": %s`, baseImageName, err)
 	}
 
 	return rebaseConfig, nil
