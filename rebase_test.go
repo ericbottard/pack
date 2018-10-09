@@ -8,7 +8,10 @@ import (
 	"github.com/buildpack/pack"
 	"github.com/buildpack/pack/config"
 	"github.com/buildpack/pack/mocks"
+	dockertypes "github.com/docker/docker/api/types"
+	dockercontainer "github.com/docker/docker/api/types/container"
 	"github.com/golang/mock/gomock"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/sclevine/spec"
 	"github.com/sclevine/spec/report"
 )
@@ -18,6 +21,7 @@ func TestRebase(t *testing.T) {
 }
 
 //go:generate mockgen -package mocks -destination mocks/writablestore.go github.com/buildpack/pack WritableStore
+//go:generate mockgen -package mocks -destination mocks/layer.go github.com/google/go-containerregistry/pkg/v1 Layer
 
 func testRebase(t *testing.T, when spec.G, it spec.S) {
 	when("#RebaseFactory", func() {
@@ -65,8 +69,52 @@ func testRebase(t *testing.T, when spec.G, it spec.S) {
 
 		when("#RebaseConfigFromFlags", func() {
 			it("XXXX", func() {
-				_, err := factory.RebaseConfigFromFlags(pack.RebaseFlags{})
+				mockRepoStore := mocks.NewMockStore(mockController)
+				mockRepoImage := mocks.NewMockImage(mockController)
+				mockBaseImage := mocks.NewMockImage(mockController)
+
+				mockDocker.EXPECT().PullImage("default/build")
+				mockImages.EXPECT().ReadImage("default/build", true).Return(mockBaseImage, nil)
+
+				mockDocker.EXPECT().PullImage("myorg/myrepo")
+				mockImages.EXPECT().RepoStore("myorg/myrepo", true).Return(mockRepoStore, nil)
+				mockImages.EXPECT().ReadImage("myorg/myrepo", true).Return(mockRepoImage, nil)
+				mockDocker.EXPECT().ImageInspectWithRaw(gomock.Any(), "myorg/myrepo").Return(dockertypes.ImageInspect{
+					Config: &dockercontainer.Config{
+						Labels: map[string]string{
+							"io.buildpacks.stack.id":           "some.default.stack",
+							"io.buildpacks.lifecycle.metadata": `{"runimage":{"sha":"sha256:abcdef"}}`,
+						},
+					},
+				}, nil, nil).AnyTimes()
+
+				cfg, err := factory.RebaseConfigFromFlags(pack.RebaseFlags{
+					RepoName: "myorg/myrepo",
+					Publish:  false,
+					NoPull:   false,
+				})
 				assertNil(t, err)
+
+				assertEq(t, cfg.RepoName, "myorg/myrepo")
+				assertEq(t, cfg.Publish, false)
+				assertSame(t, cfg.Repo, mockRepoStore)
+				assertSame(t, cfg.RepoImage, mockRepoImage)
+				assertNotNil(t, cfg.OldBase)
+				assertSame(t, cfg.NewBase, mockBaseImage)
+
+				layer1 := mocks.NewMockLayer(mockController)
+				layer1.EXPECT().DiffID().Return(v1.Hash{Algorithm: "sha256", Hex: "12345"}, nil)
+				layer2 := mocks.NewMockLayer(mockController)
+				layer2.EXPECT().DiffID().Return(v1.Hash{Algorithm: "sha256", Hex: "abcdef"}, nil)
+				layer3 := mocks.NewMockLayer(mockController)
+
+				mockRepoImage.EXPECT().Layers().Return([]v1.Layer{layer1, layer2, layer3}, nil)
+
+				oldBaseLayers, err := cfg.OldBase.Layers()
+				assertNil(t, err)
+				assertEq(t, len(oldBaseLayers), 2)
+				assertSame(t, oldBaseLayers[0], layer1)
+				assertSame(t, oldBaseLayers[1], layer2)
 			})
 
 			// 	it("uses default stack build image as base image", func() {

@@ -66,33 +66,36 @@ func (f *RebaseFactory) RebaseConfigFromFlags(flags RebaseFlags) (RebaseConfig, 
 		}
 	}
 
-	rebaseConfig := RebaseConfig{
-		RepoName: flags.RepoName,
-		Publish:  flags.Publish,
-	}
-
-	rebaseConfig.Repo, err = f.Images.RepoStore(flags.RepoName, !flags.Publish)
+	repoStore, err := f.Images.RepoStore(flags.RepoName, !flags.Publish)
 	if err != nil {
 		return RebaseConfig{}, fmt.Errorf(`failed to create repository store for image "%s": %s`, flags.RepoName, err)
 	}
 
 	f.Log.Println("Reading image", flags.RepoName)
-	rebaseConfig.RepoImage, err = f.Images.ReadImage(flags.RepoName, !flags.Publish)
+	repoImage, err := f.Images.ReadImage(flags.RepoName, !flags.Publish)
 	if err != nil {
 		return RebaseConfig{}, fmt.Errorf(`failed to read image "%s": %s`, flags.RepoName, err)
 	}
-	rebaseConfig.OldBase, err = f.fakeBaseImage(rebaseConfig)
+	oldBase, err := f.fakeBaseImage(flags.RepoName, repoImage, !flags.Publish)
 	if err != nil {
 		return RebaseConfig{}, fmt.Errorf(`failed to read old base image "%s": %s`, baseImageName, err)
 	}
 	f.Log.Println("Reading new base image", baseImageName)
-	rebaseConfig.NewBase, err = f.Images.ReadImage(baseImageName, !flags.Publish)
+	newBase, err := f.Images.ReadImage(baseImageName, !flags.Publish)
 	if err != nil {
 		return RebaseConfig{}, fmt.Errorf(`failed to read new base image "%s": %s`, baseImageName, err)
 	}
 
-	return rebaseConfig, nil
+	return RebaseConfig{
+		RepoName:  flags.RepoName,
+		Publish:   flags.Publish,
+		Repo:      repoStore,
+		RepoImage: repoImage,
+		OldBase:   oldBase,
+		NewBase:   newBase,
+	}, nil
 }
+
 func (f *RebaseFactory) Rebase(cfg RebaseConfig) error {
 	newImage, err := mutate.Rebase(cfg.RepoImage, cfg.OldBase, cfg.NewBase, &mutate.RebaseOptions{})
 	if err != nil {
@@ -180,8 +183,8 @@ func (f *RebaseFactory) setRunImageSHA(img, runImage v1.Image) error {
 	return nil
 }
 
-func (f *RebaseFactory) fakeBaseImage(cfg RebaseConfig) (v1.Image, error) {
-	str, err := f.imageLabel(cfg.RepoName, "io.buildpacks.lifecycle.metadata", !cfg.Publish)
+func (f *RebaseFactory) fakeBaseImage(repoName string, repoImage v1.Image, useDaemon bool) (v1.Image, error) {
+	str, err := f.imageLabel(repoName, "io.buildpacks.lifecycle.metadata", useDaemon)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +197,7 @@ func (f *RebaseFactory) fakeBaseImage(cfg RebaseConfig) (v1.Image, error) {
 		return nil, err
 	}
 
-	return &SubImage{img: cfg.RepoImage, topSHA: metadata.RunImage.SHA}, nil
+	return &SubImage{img: repoImage, topSHA: metadata.RunImage.SHA}, nil
 }
 
 type SubImage struct {
